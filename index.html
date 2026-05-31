@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Chattanooga Area Regional Transportation Map</title>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+        <script src="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.js"></script>
+        <link href="https://unpkg.com/maplibre-gl@^4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+
+        <!-- font -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+
+        <style>
+            * {
+                font-family: "Inter", sans-serif;
+                font-optical-sizing: auto;
+                font-style: normal;
+            }
+
+            body {
+                margin: 0;
+                padding: 0;
+            }
+
+            .maplibregl-popup-content {
+                white-space: pre-line;
+            }
+
+            #app {
+                bottom: 0;
+                left: 0;
+                right: 0;
+                position: absolute;
+                top: 0;
+            }
+            #map {
+                bottom: 30px;
+                left: 0;
+                right: 0;
+                position: absolute;
+                top: 56px;                
+            }
+
+            #footer {
+                background: #004360;
+                bottom: 0;
+                height: 30px;
+                position: absolute;
+                width: 100%;
+                z-index: 99;
+            }
+
+            #footer-text {
+                color: lightgray;
+                left: 10px;
+                position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+
+            #header {
+                background-color: #00D3EB;
+                display: block;
+                height: 56px;
+                position: relative;
+                width: 100%;
+                z-index: 99;
+            }
+
+            #header #text {
+                /* font-size: 16px;
+                font-weight: 400;
+                letter-spacing: .32px; */
+
+
+                left: 15px;
+                position: absolute;
+                color: whitesmoke;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+
+            #pagename {
+                display: inline-block;
+                font-size: 26px;
+                font-weight: bold;
+            }
+
+            #warning {
+                display: inline-block;
+                color: black;
+                font-weight: bold;
+                margin-left: 15px;
+            }
+            #warning-mobile-inner {
+                left: 15px;
+                position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
+            }
+
+            @media screen and (max-width: 800px) {
+                #footer {
+                    font-size: 12px;
+                }
+
+                #header #text {
+                    left: 15px;
+                }
+
+                /* #warning {
+                    display: none;
+                }
+                #warning-mobile {
+                    background: #004360;
+                    height: 30px;
+                    left: 0;
+                    padding-left: 10px;
+                    position: absolute;
+                    right: 0;
+                    top: 56px;
+                    width: 100%;
+                } */
+            }
+
+            .marker {
+                border: 2px solid rgb(28, 51, 5);
+                /* background: #00A3BD; */
+                border-radius: 3px;
+                cursor: pointer;
+                height: 26px;
+                text-align: center;
+                width: 26px;
+            }
+            .marker:hover {
+                height: 32px;
+                width: 32px;
+            }
+            .marker-inner {
+                background: orange;
+                border-radius: 0px;
+                height: 25px;
+                left: 50%;
+                position: absolute;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                width: 25px;
+            }
+
+            .marker-inner-text {
+                left: 50%;
+                position: absolute;
+                transform: translate(-50%, -50%);
+                top: 50%;
+            }
+
+            .bus-inner img {
+                height: 15px;
+                left: 50%;
+                position: absolute;
+                top: 50%;
+                transform: translate(-50%, -50%);
+                width: 15px;
+            }
+
+    </style>
+        <script>
+            window.app = {
+                catalog: {
+                    bike_stations: {
+                        url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/bike_chattanooga_stations/v1/data.points.geojson",
+                        layer_type: "symbol",
+                        icon_image: "./assets/icons/bike_chattanooga_station.png",
+                        min_zoom: 12
+                    },
+                    bus_routes: {
+                        url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/simple_bus_routes/v1/data.lines.geojson",
+                        layer_type: "line",
+                    },
+                    bus_stops: {
+                        url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/simple_bus_stops/v1/data.points.geojson",
+                        layer_type: "circle",
+                        min_zoom: 14
+                    }
+                },
+                config: {
+                },
+                data: {
+                    routes: null,
+                    stops: null,
+                    buses: null
+                },
+                state: {
+                    markers: {
+                        buses: null
+                    },
+                    route: null
+                }
+            };
+        </script>
+    </head>
+    <body>
+        <div id="app">
+            <div id="header">
+                <div id="text">
+                    <div id="pagename">Chattanooga Area Regional Transportation Map</div>
+                </div>
+            </div>
+            <div id="map"></div>
+            <div id="footer">
+                <div id="footer-text">
+                    Built by CARTA with MapLibreGL.
+                </div>
+            </div>
+        </div>
+        <script>
+            window.app.state.route = new URLSearchParams(window.location.search).get("route");
+
+            function get_xy_point(item) {
+                if (typeof item.loc === "object" && item.loc.type === "Point" && typeof item.loc.coordinates === "object" && item.loc.coordinates.length === 2) {
+                    return item.loc.coordinates;
+                } else if (typeof item.latitude === "number" && typeof item.longitude === "number") {
+                    return [item.longitude, item.latitude];
+                } else if (typeof item.latitude === "string" && typeof item.longitude === "string") {
+                    return [Number(item.longitude), Number(item.latitude)];                    
+                } else if (typeof item.Latitude === "number" && typeof item.Longitude === "number") {
+                    return [item.Longitude, item.Latitude];
+                } else if (typeof item.lat === "number" && typeof item.lon === "number") {
+                    return [item.lon, item.lat];
+                } else if (typeof item.lat === "string" && typeof item.lon === "string") {
+                    return [Number(item.lon), Number(item.lat)];                    
+                } else {
+                    console.log("failed to parse", item);
+                }
+            }
+            
+            var mapOptions = {
+                container: 'map', // container id
+                // Define the map syle (OpenStreetMap raster tiles)
+                style: "https://api.maptiler.com/maps/streets-v2-light/style.json?key=8qWGv20RR0VkG9m95KLc",
+                center: [-85.310947, 35.055666], // starting position [lng, lat]
+                zoom: 10.75 // starting zoom
+            };
+
+            // zoom out more if on mobile
+            if (window.innerWidth < 800) {
+                mapOptions.zoom = 9;
+                mapOptions.attributionControl = false;
+            }
+
+            var map = new maplibregl.Map(mapOptions);
+
+            map.addControl(new maplibregl.GeolocateControl({
+                positionOptions: {
+                    enableHighAccuracy: true
+                },
+                trackUserLocation: true,
+                showUserHeading: true
+            }), "top-right");
+
+            map.on('load', async () => {
+                load_bus_routes();
+                load_bus_stops();
+                load_bike_stations();
+            });
+
+            if (window.innerWidth < 800) {
+                map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
+            }
+
+            async function load_layer (key) {
+                console.log("loading layer: " + key);
+                const layer = window.app.catalog[key];
+                const url = layer.url;
+                const layer_type = layer.layer_type;
+                const min_zoom = layer.min_zoom;
+                const icon_image = layer.icon_image;
+                console.log({layer_type, icon_image, min_zoom})
+                console.log("url: " + url);
+                const res = await fetch(url);
+                const data = await res.json();
+                map.addSource(key, {
+                    'type': 'geojson',
+                    'data': data
+                });
+
+                if (layer_type === "symbol") {
+                    const image = await map.loadImage(icon_image);
+                    map.addImage(icon_image, image.data);
+                    const options = {
+                        id: key,
+                        type: layer_type,
+                        source: key,
+                        layout: {
+                            'icon-image': icon_image,
+                            'icon-size': 0.5,
+                            'icon-allow-overlap': true
+                        }
+                    };
+                    if (min_zoom) options.minzoom = min_zoom;
+                    map.addLayer(options);                    
+                } else if (layer_type === "circle") {      
+                    const options = {
+                        id: key,
+                        type: 'circle',
+                        source: key,
+                        paint: {
+                            'circle-radius': 5,
+                            'circle-color': '#AAA',
+                            'circle-stroke-width': 2,
+                            'circle-stroke-color': '#777'
+                        }
+                    };
+                    if (min_zoom) options.minzoom = min_zoom;
+                    map.addLayer(options);
+                } else if (layer_type === "line") {
+                    map.addLayer({
+                        'id': key,
+                        'type': layer_type,
+                        'source': key,
+                        'layout': {
+                            'line-join': 'round',
+                            'line-cap': 'round'
+                        },
+                        'paint': {
+                            // This expression tells MapLibre: 
+                            // "Look at the 'stroke' property of the feature and use it as the color."
+                            // If 'stroke' is missing, default to '#000' (black).
+                            'line-color': ['get', 'stroke'], 
+                            'line-width': 3,
+                            'line-opacity': 0.6
+                        }
+                    });
+                }
+            }
+
+            async function load_bus_routes () {
+                console.log("loading bus routes");
+                load_layer("bus_routes");            
+            }
+
+            async function load_bus_stops () {
+                console.log("loading bus_stops");
+                load_layer("bus_stops");            
+            }
+
+            async function load_bike_stations () {
+                console.log("loading bike_stations");
+                load_layer("bike_stations");                
+            }
+
+            // add bus stops
+            async function update_stops () {
+                const res = await fetch(window.app.config.stops);
+                const stops_geojson = await res.json();
+                // console.log(stops_geojson);
+
+                // filter by stops
+                const stops = {
+                    type: "FeatureCollection",
+                    features: stops_geojson.features.filter(feature => feature.properties.route_ids.split(",").includes(app.state.route))
+                };
+
+                if (!stops) {
+                    console.error("couldn't find stops");
+                    return;
+                }
+
+                map.addSource('simple-bus-stops', {
+                    'type': 'geojson',
+                    'data': stops
+                });
+            }
+
+            async function update_buses () {
+                console.log("updating buses");
+                const res = await fetch(window.app.config.buses);
+                app.data.buses = await res.json();
+
+                if (app.state.markers.buses) {
+                    app.state.markers.buses.forEach(marker => {
+                        marker.remove();
+                    });
+                }
+                app.state.markers.buses = [];
+
+                const buses = app.data.buses;
+                for (let i = 0; i < buses.length; i++) {
+                    const bus = buses[i];
+
+                    if (bus.route !== app.state.route) {
+                        continue;
+                    }
+
+                    const point = get_xy_point(bus);  
+                    console.log("point:", point);
+                    if (!point) continue;
+
+                    // create a DOM element for the marker
+                    const el = document.createElement('div');
+                    el.className = "marker bus";
+                    el.innerHTML = `<div class="marker-inner bus-inner"><div class="marker-inner-text">${bus.route}</div></div>`;
+
+                    const description = [
+                        "bus:\n" + bus.vehicle_id,
+                        "destination:\n" + bus.destination,
+                        "last updated:\n" + new Date(bus.timestamp).toLocaleString()
+                    ].filter(Boolean).join("\n\n");
+                    const popup = new maplibregl.Popup({offset: 25}).setText(description.trim());
+
+                    const marker = new maplibregl.Marker( { element: el })
+                        .setLngLat(point)
+                        .setPopup(popup)
+                        .addTo(map);
+
+                    app.state.markers.buses.push(marker);
+                }
+            }
+
+            if (window.location.href.includes("hide_buses=true") === false) {
+                // update_buses();
+                setInterval(function () {
+                    // update_buses();
+                }, 15 * 1000);
+            }
+            
+
+            // Add click event for the stops layer
+            map.on('click', 'stops-layer', (e) => {
+                const coordinates = e.features[0].geometry.coordinates.slice();
+                const props = e.features[0].properties;
+
+                // Build the popup content
+                // Adjust 'route_ids' and 'name' if your GeoJSON keys are different
+                const description = `
+                    <strong>Stop Id:</strong><br>${props.id || 'Unknown Id'}<br>
+                    <strong>Stop Name:</strong><br>${props.name || 'Unknown Name'}
+                `;
+
+                // Ensure that if the map is zoomed out such that multiple
+                // copies of the feature are visible, the popup appears
+                // over the copy being pointed to.
+                while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+                    coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+                }
+
+                new maplibregl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(description)
+                    .addTo(map);
+            });
+
+            // Change the cursor to a pointer when the mouse is over the stops layer.
+            map.on('mouseenter', 'stops-layer', () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+
+            // Change it back to a pointer when it leaves.
+            map.on('mouseleave', 'stops-layer', () => {
+                map.getCanvas().style.cursor = '';
+            });
+        </script>
+    </body>
+</html>
