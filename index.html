@@ -126,9 +126,9 @@
             }
 
             .marker {
-                border: 2px solid rgb(28, 51, 5);
+                border: 2px solid #004360;
                 /* background: #00A3BD; */
-                border-radius: 3px;
+                border-radius: 26px;
                 cursor: pointer;
                 height: 26px;
                 text-align: center;
@@ -139,8 +139,8 @@
                 width: 32px;
             }
             .marker-inner {
-                background: orange;
-                border-radius: 0px;
+                background: #00A3BD;
+                border-radius: 25px;
                 height: 25px;
                 left: 50%;
                 position: absolute;
@@ -148,7 +148,6 @@
                 transform: translate(-50%, -50%);
                 width: 25px;
             }
-
             .marker-inner-text {
                 left: 50%;
                 position: absolute;
@@ -177,10 +176,12 @@
                     },
                     buses: {
                         url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/gtfsrt_vehicle_positions/v1/data.points.geojson",
-                        layer_type: "circle",
-                        circle_color: "#00A3BD",
-                        circle_stroke_color: "#004360",
-                        circle_radius: 10
+                        layer_type: "marker",
+                        // circle_color: "#00A3BD",
+                        // circle_stroke_color: "#004360",
+                        // circle_radius: 10,
+                        display_fields: ["route_id", "vehicle_id", "timestamp"],
+                        label: "route_id"
                     },
                     bus_routes: {
                         url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/simple_bus_routes/v1/data.lines.geojson",
@@ -288,14 +289,40 @@
                 const circle_color = layer.circle_color;
                 const circle_stroke_color = layer.circle_stroke_color;
                 const circle_radius = layer.circle_radius;
+                const display_fields = layer.display_fields;
+                const label = layer.label;
                 const res = await fetch(url);
                 const data = await res.json();
+
                 map.addSource(key, {
                     'type': 'geojson',
                     'data': data
                 });
 
-                if (layer_type === "symbol") {
+
+                if (layer_type === "marker") {
+                    app.state.markers[key] = [];
+                    const features = data.features;
+                    for (let i = 0; i < features.length; i++) {
+                        const feat = features[i];
+                        if (feat.geometry.type !== "Point") continue;
+                        const point = feat.geometry.coordinates;
+                        if (!point) continue;
+
+                        // create a DOM element for the marker
+                        const el = document.createElement('div');
+                        el.className = "marker bus";
+                        el.innerHTML = `<div class="marker-inner bus-inner"><div class="marker-inner-text">${feat.properties[label]}</div></div>`;
+
+                        const description = display_fields.map(fld => `${fld}:\n${feat.properties[fld]}`).join("\n\n");
+                        const popup = new maplibregl.Popup({offset: 25}).setText(description.trim());
+                        const marker = new maplibregl.Marker( { element: el })
+                            .setLngLat(point)
+                            .setPopup(popup)
+                            .addTo(map);
+                        app.state.markers[key].push(marker);    
+                    }                
+                } else if (layer_type === "symbol") {
                     const image = await map.loadImage(icon_image);
                     map.addImage(icon_image, image.data);
                     const options = {
@@ -406,7 +433,7 @@
 
             async function update_layer (layer_name) {
                 console.log("updating " + layer_name);
-                const res = await fetch(window.app.catalog[layer_name]);
+                const res = await fetch(window.app.catalog[layer_name].url);
                 geojson = await res.json();
                 map.getSource(layer_name).setData(geojson);
             }
