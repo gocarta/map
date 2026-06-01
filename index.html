@@ -175,6 +175,13 @@
                         icon_image: "./assets/icons/bike_chattanooga_station.png",
                         min_zoom: 12
                     },
+                    buses: {
+                        url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/gtfsrt_vehicle_positions/v1/data.points.geojson",
+                        layer_type: "circle",
+                        circle_color: "#00A3BD",
+                        circle_stroke_color: "#004360",
+                        circle_radius: 10
+                    },
                     bus_routes: {
                         url: "https://gocarta.s3.us-east-2.amazonaws.com/public/data/simple_bus_routes/v1/data.lines.geojson",
                         layer_type: "line",
@@ -264,6 +271,7 @@
                 load_bus_routes();
                 load_bus_stops();
                 load_bike_stations();
+                load_buses();
             });
 
             if (window.innerWidth < 800) {
@@ -277,8 +285,9 @@
                 const layer_type = layer.layer_type;
                 const min_zoom = layer.min_zoom;
                 const icon_image = layer.icon_image;
-                console.log({layer_type, icon_image, min_zoom})
-                console.log("url: " + url);
+                const circle_color = layer.circle_color;
+                const circle_stroke_color = layer.circle_stroke_color;
+                const circle_radius = layer.circle_radius;
                 const res = await fetch(url);
                 const data = await res.json();
                 map.addSource(key, {
@@ -307,10 +316,10 @@
                         type: 'circle',
                         source: key,
                         paint: {
-                            'circle-radius': 5,
-                            'circle-color': '#AAA',
+                            'circle-radius': circle_radius || 5,
+                            'circle-color': circle_color || '#AAA',
                             'circle-stroke-width': 2,
-                            'circle-stroke-color': '#777'
+                            'circle-stroke-color': circle_stroke_color || '#777'
                         }
                     };
                     if (min_zoom) options.minzoom = min_zoom;
@@ -351,6 +360,27 @@
                 load_layer("bike_stations");                
             }
 
+            async function load_buses () {
+                console.log("loading buses");
+                await load_layer("buses");
+                
+                // Text layer (on top)
+                map.addLayer({
+                    id: 'bus-labels',
+                    type: 'symbol',
+                    source: 'buses',
+                    layout: {
+                        'text-field': ['get', 'route_id'], // property in your GeoJSON
+                        'text-size': 10,
+                        'text-anchor': 'center',
+                        'text-offset': [0, 0]
+                    },
+                    paint: {
+                        'text-color': '#000'
+                    }
+                });
+            }
+
             // add bus stops
             async function update_stops () {
                 const res = await fetch(window.app.config.stops);
@@ -374,56 +404,63 @@
                 });
             }
 
-            async function update_buses () {
-                console.log("updating buses");
-                const res = await fetch(window.app.config.buses);
-                app.data.buses = await res.json();
-
-                if (app.state.markers.buses) {
-                    app.state.markers.buses.forEach(marker => {
-                        marker.remove();
-                    });
-                }
-                app.state.markers.buses = [];
-
-                const buses = app.data.buses;
-                for (let i = 0; i < buses.length; i++) {
-                    const bus = buses[i];
-
-                    if (bus.route !== app.state.route) {
-                        continue;
-                    }
-
-                    const point = get_xy_point(bus);  
-                    console.log("point:", point);
-                    if (!point) continue;
-
-                    // create a DOM element for the marker
-                    const el = document.createElement('div');
-                    el.className = "marker bus";
-                    el.innerHTML = `<div class="marker-inner bus-inner"><div class="marker-inner-text">${bus.route}</div></div>`;
-
-                    const description = [
-                        "bus:\n" + bus.vehicle_id,
-                        "destination:\n" + bus.destination,
-                        "last updated:\n" + new Date(bus.timestamp).toLocaleString()
-                    ].filter(Boolean).join("\n\n");
-                    const popup = new maplibregl.Popup({offset: 25}).setText(description.trim());
-
-                    const marker = new maplibregl.Marker( { element: el })
-                        .setLngLat(point)
-                        .setPopup(popup)
-                        .addTo(map);
-
-                    app.state.markers.buses.push(marker);
-                }
+            async function update_layer (layer_name) {
+                console.log("updating " + layer_name);
+                const res = await fetch(window.app.catalog[layer_name]);
+                geojson = await res.json();
+                map.getSource(layer_name).setData(geojson);
             }
 
+            // async function update_buses () {
+            //     console.log("updating buses");
+            //     const res = await fetch(window.app.catalog.buses);
+            //     geojson = await res.json();
+            //     map.getSource('buses').setData(geojson);
+
+            //     if (app.state.markers.buses) {
+            //         app.state.markers.buses.forEach(marker => {
+            //             marker.remove();
+            //         });
+            //     }
+            //     app.state.markers.buses = [];
+
+            //     const buses = app.data.buses;
+            //     for (let i = 0; i < buses.length; i++) {
+            //         const bus = buses[i];
+
+            //         if (bus.route !== app.state.route) {
+            //             continue;
+            //         }
+
+            //         const point = get_xy_point(bus);  
+            //         console.log("point:", point);
+            //         if (!point) continue;
+
+            //         // create a DOM element for the marker
+            //         const el = document.createElement('div');
+            //         el.className = "marker bus";
+            //         el.innerHTML = `<div class="marker-inner bus-inner"><div class="marker-inner-text">${bus.route}</div></div>`;
+
+            //         const description = [
+            //             "bus:\n" + bus.vehicle_id,
+            //             "destination:\n" + bus.destination,
+            //             "last updated:\n" + new Date(bus.timestamp).toLocaleString()
+            //         ].filter(Boolean).join("\n\n");
+            //         const popup = new maplibregl.Popup({offset: 25}).setText(description.trim());
+
+            //         const marker = new maplibregl.Marker( { element: el })
+            //             .setLngLat(point)
+            //             .setPopup(popup)
+            //             .addTo(map);
+
+            //         app.state.markers.buses.push(marker);
+            //     }
+            // }
+
             if (window.location.href.includes("hide_buses=true") === false) {
-                // update_buses();
                 setInterval(function () {
-                    // update_buses();
-                }, 15 * 1000);
+                    update_layer("buses");
+                }, 2 * 1000);
             }
             
 
